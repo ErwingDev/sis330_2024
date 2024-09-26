@@ -1,0 +1,95 @@
+{% extends "index.html" %}
+
+{% block title %}Agregar Persona{% endblock %}
+
+{% block content %}
+
+    <div id="div-add-person" class="row">
+
+        <div class="col-12 col-md-6 mx-auto mb-4">
+            <div class="row">
+                <h3 class="text-center mx-auto d-block">Detectar Rostro</h3>
+                <div id="div-select-camera-face" class="col-12 mx-auto mb-2">
+                    <select id="cameraSelect-face" class="form-control">
+                        <option value="">Seleccione su cámara</option>
+                        {% for camera in cameras %}
+                            <option value="{{camera}}">Camera {{camera}}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 d-flex justify-content-center">
+                    <!-- <video id="video-face" autoplay class="img-fluid rounded bg-video-camera"></video> -->
+                    <img id="video-face" class="rounded bg-video-camera" src="static/images/camera.png"/>
+                </div>
+
+                <div class="col-12 d-flex justify-content-center">
+                    <button type="button" id="camera-button-face" class="m-2 btn btn-success btn-sm mt-2">
+                        <i class="fas fa-camera"></i> 
+                        Abrir Cámara
+                    </button>
+                    <button type="button" id="camera-close-face" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-camera"></i> 
+                        Cerrar Cámara
+                    </button>
+                    <button type="button" id="capture-button-face" class="m-2 btn btn-primary btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-check"></i>     
+                        Capturar Foto
+                    </button>
+                </div>
+            </div>
+            
+            <form id="form-images" class="w-100">
+                <div id="container-images-face" class="row justify-content-center text-center"></div>
+            </form>
+
+            <div class="row justify-content-center text-center my-4">
+                <button id="btn-upload-images-face" class="btn btn-primary d-none">Cargar Imágenes</button>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 mx-auto mb-4">
+            <div class="row">
+                <h3 class="text-center mx-auto d-block">Capturar Cuerpo</h3>
+                <div id="div-select-camera" class="col-12 mx-auto mb-2">
+                    <select id="cameraSelect" class="form-control">
+                        <option value="">Seleccione su cámara</option>
+                        {% for camera in cameras %}
+                            <option value="{{camera}}">Camera {{camera}}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="hidden" name="person" id="person">
+                </div>
+                <div class="col-12 d-flex justify-content-center">
+                    <!-- <video id="video2" autoplay class="img-fluid rounded bg-video-camera d-none"></video> -->
+                    <img id="video" class="rounded bg-video-camera" src="static/images/camera.png"/>
+                </div>
+
+                <div class="col-12 d-flex justify-content-center">
+                    <button type="button" id="camera-button" class="m-2 btn btn-success btn-sm mt-2">
+                        <i class="fas fa-camera"></i> 
+                        Abrir Cámara
+                    </button>
+                    <button type="button" id="camera-save" class="m-2 btn btn-primary btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-save"></i> 
+                        Guardar
+                    </button>
+                    <button type="button" id="camera-close" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-camera"></i> 
+                        Cerrar Cámara
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+{% endblock %}
+
+{% block script %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="../static/scripts/add-person.js"></script>
+    <script>
+        document.querySelector('#nav-add-person').classList.add('active');
+    </script>
+{% endblock %}
+

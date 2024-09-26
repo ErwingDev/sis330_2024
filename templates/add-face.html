@@ -1,0 +1,65 @@
+{% extends "index.html" %}
+
+{% block title %}Agregar Rostro{% endblock %}
+
+{% block content %}
+
+    <div id="div-add-face" class="row">
+        <div class="col-12 col-md-8 mx-auto mb-4">
+            <div class="row">
+                <div id="div-select-camera" class="col-12 mx-auto mb-2">
+                    <select id="cameraSelect" class="form-control">
+                        <option value="">Seleccione su cámara</option>
+                    </select>
+                </div>
+                <div class="col-12 d-flex justify-content-center">
+                    <video id="video" autoplay class="img-fluid rounded bg-video-camera"></video>
+                </div>
+
+                <div class="col-12 d-flex justify-content-center">
+                    <button type="button" id="camera-button" class="m-2 btn btn-success btn-sm mt-2">
+                        <i class="fas fa-camera"></i> 
+                        Abrir Cámara
+                    </button>
+                    <button type="button" id="camera-close" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-camera"></i> 
+                        Cerrar Cámara
+                    </button>
+                    <button type="button" id="capture-button" class="m-2 btn btn-primary btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-check"></i>     
+                        Capturar Foto
+                    </button>
+                </div>
+            </div>
+            
+            <form id="form-images" class="w-100" enctype="multipart/form-data">
+                <div id="container-images" class="row justify-content-center text-center"></div>
+            </form>
+
+            <div class="justify-content-center text-center my-4">
+                <div class="col-12 col-md-10 col-lg-8 mx-auto">
+                    <div class="form-group">
+                        <label for="ci">CI:</label>
+                        <input type="number" name="ci" id="ci" class="form-control" placeholder="CI" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="name">Nombre Completo</label>
+                        <input type="text" name="name" id="name" class="form-control" placeholder="Nombre Completo" required>
+                    </div>
+                    <div class="form-group">
+                        <button id="btn-upload-images" class="btn btn-primary d-none">Guardar Datos</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+        
+{% endblock %}
+
+{% block script %}
+    <script src="../static/scripts/add-face.js"></script>
+    <script>
+        document.querySelector('#nav-add-face').classList.add('active');
+    </script>
+{% endblock %}
