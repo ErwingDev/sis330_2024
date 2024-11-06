@@ -7,17 +7,17 @@ const socket = io.connect('http://' + document.domain + ':' + location.port);
 
 socket.on('person_recognized', function (data) {
   console.log(data);
-  if(data.frame) {
-    document.querySelector('#person').value = data.person;
+  if(data.type == 'face') {
+    if(data.frame) {
+      document.querySelector('#person').value = data.person;
+    }
     document.querySelector('#video-face').src = 'data:image/jpeg;base64,' + data.frame;
-  }
-  
-  if(data.body_person) {
+  } else if(data.type == 'body') {
     if(!cropCapture)
       imgBody = 'data:image/jpeg;base64,' + data.body_person;
     if(data.status <= 0.96) {
       countCapture++;
-      if(countCapture == 8) {
+      if(countCapture == 10) {
         stopDetectBody($('#cameraSelect :selected').val(), false);
         closeCamera(1);
         document.querySelector('#camera-save').style.display = 'block';

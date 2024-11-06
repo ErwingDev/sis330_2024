@@ -193,7 +193,7 @@ def detect_body():
                             x1, y1, x2, y2 = box.xyxy[0]
                             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
                             probability = ((box.conf[0]*100)/100).item()
-                            if probability > 0.60 :
+                            if probability > 0.75 :
                                 # cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                                 """ _, frame_person = cap.read()
                                 frame_rgb = cv2.cvtColor(frame_person, cv2.COLOR_BGR2RGB)
@@ -204,7 +204,8 @@ def detect_body():
                                 # cv2.putText(frame, str(h_ratio), (x1, y2-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                                 # if h_ratio < 0.75 : 
                                 frame_crop = ''
-                                if h_ratio <= 0.96 : 
+                                # if h_ratio <= 0.96 : 
+                                if h_ratio <= 0.85 : 
                                     # cv2.putText(frame, str(h_ratio), (x1, y2-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                                     img_crop = frame[y1:y2, x1:x2]
                                     _, buffer_crop = cv2.imencode('.jpg', img_crop)
@@ -212,7 +213,7 @@ def detect_body():
                                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                                 _, buffer = cv2.imencode('.jpg', frame)
                                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
-                                socketio.emit('person_recognized', {'body_person': frame_base64, 'status': h_ratio, 'person_crop': frame_crop})
+                                socketio.emit('person_recognized', {'body_person': frame_base64, 'status': h_ratio, 'person_crop': frame_crop, 'type': 'body'})
                                 
                     
                     if cv2.waitKey(1) & 0xFF == ord('q'):  # Permite cerrar la ventana presionando 'q'.
@@ -382,6 +383,7 @@ def start_tracking():  # Define la función que se ejecutará cuando se acceda a
     data = request.json  # Obtiene los datos JSON enviados en la solicitud.
     camera_indices = data['camera_indices']  # Lista de índices de cámaras para iniciar el seguimiento.
     print(camera_indices)
+    #TODO: jalar las variables y los metodos iniciantes para el tracking
     config_tracking = load_config("./face_tracking/config/config_tracking.yaml")  # Carga la configuración de seguimiento desde un archivo YAML.
 
     stop_tracking_event.clear()  # Limpia el evento de parada para asegurar que el seguimiento continúe.
@@ -487,40 +489,17 @@ def process_tracking(camera_index, detector, tracker):  # Define la función par
                                     matched_name = name if score > 0.25 else "Unknown"
 
                                 # if score > 0.75 :
-                                if score > 0.50 :
+                                if score > 0.60 :
                                     name_person = name.split('__')
                                     name_person = name_person[1] if len(name_person) > 1 else name_person
                                     cv2.putText(frame, f'{name_person}', (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                                    _, buffer = cv2.imencode('.jpg', frame)
-                                    frame_base64 = base64.b64encode(buffer).decode('utf-8')
-                                    socketio.emit('person_recognized', {'person': name, 'frame': frame_base64})
-                                    """ _, frame_person = cap.read()
-                                    cv2.imwrite('./photo.png', frame_person) """
-                                    # crop_people()
+                                    # _, buffer = cv2.imencode('.jpg', frame)
+                                    # frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                                    # socketio.emit('person_recognized', {'person': name, 'frame': frame_base64})
+                _, buffer = cv2.imencode('.jpg', frame)
+                frame_base64 = base64.b64encode(buffer).decode('utf-8')
 
-                                # yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
-                                """ if matched_name != "Unknown" and score > 0.25 not in recognized_participants:
-                                    recognized_participants.append(name)
-
-                                    participant = Participant.query.filter_by(ci=name).first()
-                                    
-                                    if participant:
-                                        existing_attendance = Attendance.query.filter_by(
-                                            event_id=event_id, participant_id=participant.id
-                                        ).first()
-                                        if not existing_attendance:
-                                            if event_id not in [event.id for event in participant.events]:
-                                                event = Event.query.get(event_id)
-                                                participant.events.append(event)
-                                                socketio.emit('participant_recognized', {'ci': name})
-                                                attendance = Attendance(event_id=event_id, participant_id=participant.id)
-                                                db.session.add(attendance)
-                                                db.session.commit() """
-
-                        # cv2.putText(frame, f'{matched_name} - Score: {highest_score:.2f}', (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-
-                # cv2.imshow(f'Camera {camera_index}', frame)  # Muestra el cuadro de la cámara en una ventana.
+                socketio.emit('person_recognized', {'person': name, 'frame': frame_base64, 'type': 'face'})
 
                 if cv2.waitKey(1) & 0xFF == ord('q'):  # Permite cerrar la ventana presionando 'q'.
                     break
@@ -530,72 +509,6 @@ def process_tracking(camera_index, detector, tracker):  # Define la función par
             cap.release()  # Libera la cámara al finalizar.
             cv2.destroyAllWindows()  # Cierra todas las ventanas de OpenCV.
 
-""" 
-@app.route('/add_event')  # Define la ruta para mostrar el formulario de añadir un evento.
-def add_event():  # Define la función que se ejecutará cuando se acceda a la ruta '/add_event'.
-    return render_template('add_event.html')  # Renderiza la plantilla 'add_event.html' para mostrar el formulario al usuario.
-
-@app.route('/save_event', methods=['POST'])  # Define la ruta para guardar un evento, utilizando el método POST.
-def save_event():  # Define la función que se ejecutará cuando se acceda a la ruta '/save_event'.
-    try:
-        data = request.get_json()  # Obtiene los datos JSON enviados en la solicitud.
-        nombre = data.get('nombre')  # Extrae el nombre del evento desde los datos.
-        fecha = data.get('fecha')  # Extrae la fecha del evento desde los datos.
-        hora = data.get('hora')  # Extrae la hora del evento desde los datos.
-
-        if not nombre or not fecha or not hora:  # Verifica si alguno de los campos está vacío.
-            abort(400, description="All fields are required.")  # Devuelve un error 400 si faltan campos.
-
-        new_event = Event(nombre=nombre, fecha=fecha, hora=hora)  # Crea una nueva instancia del evento con los datos proporcionados.
-
-        db.session.add(new_event)  # Añade el nuevo evento a la sesión de la base de datos.
-        db.session.commit()  # Guarda los cambios en la base de datos.
-
-        return jsonify({"message": "Event saved successfully."}), 200  # Devuelve una respuesta JSON indicando que el evento se guardó correctamente.
-
-    except Exception as e:  # Captura cualquier excepción que ocurra durante el proceso.
-        db.session.rollback()  # Revierte cualquier cambio en la sesión de la base de datos en caso de error.
-        return jsonify({"error": str(e)}), 500  # Devuelve un error 500 con el mensaje de la excepción.
-
-
-@app.route('/get_participants/<int:event_id>', methods=['GET'])  # Define la ruta para obtener los participantes de un evento específico, usando el método GET.
-def get_participants(event_id):  # Define la función que se ejecutará cuando se acceda a la ruta '/get_participants/<event_id>'.
-    try:
-        # Obtener los IDs de los participantes asociados al evento usando la tabla intermedia
-        participant_ids = db.session.query(participants_events.c.participant_id).filter_by(event_id=event_id).all()  # Consulta los IDs de los participantes vinculados al evento específico.
-
-        # Extraer solo los IDs de los resultados
-        participant_ids = [pid[0] for pid in participant_ids]  # Convierte los resultados de la consulta en una lista de IDs.
-
-        # Obtener los detalles de los participantes utilizando los IDs obtenidos
-        participants = db.session.query(Participant).filter(Participant.id.in_(participant_ids)).all()  # Consulta los detalles de los participantes que tienen los IDs obtenidos.
-
-        # Convertir los resultados en una lista de diccionarios o cadenas, según lo que necesites
-        participant_list = [{'id': p.id, 'ci': p.ci} for p in participants]  # Crea una lista de diccionarios con los IDs y CI de cada participante.
-
-        return jsonify({'participants': participant_list})  # Devuelve la lista de participantes en formato JSON.
-    except Exception as e:  # Captura cualquier excepción que ocurra durante el proceso.
-        print(f"Error retrieving participants: {e}")  # Imprime un mensaje de error en la consola.
-        return jsonify({'error': 'Unable to retrieve participants'}), 500  # Devuelve un error 500 con un mensaje indicando que no se pudieron recuperar los participantes.
-
-    
-@app.route('/show_participants/<int:event_id>')  # Define la ruta para mostrar los participantes de un evento específico.
-def show_participants(event_id):  # Define la función que se ejecutará cuando se acceda a la ruta '/show_participants/<event_id>'.
-    try:
-        # Obtener los IDs de los participantes asociados al evento usando la tabla intermedia
-        participant_ids = db.session.query(participants_events.c.participant_id).filter_by(event_id=event_id).all()  # Consulta los IDs de los participantes vinculados al evento específico.
-
-        # Extraer solo los IDs de los resultados
-        participant_ids = [pid[0] for pid in participant_ids]  # Convierte los resultados de la consulta en una lista de IDs.
-
-        # Obtener los detalles de los participantes utilizando los IDs obtenidos
-        participants = db.session.query(Participant).filter(Participant.id.in_(participant_ids)).all()  # Consulta los detalles de los participantes que tienen los IDs obtenidos.
-
-        return render_template('show_participants.html', participants=participants)  # Renderiza la plantilla 'show_participants.html' pasando la lista de participantes como contexto.
-    except Exception as e:  # Captura cualquier excepción que ocurra durante el proceso.
-        print(f"Error retrieving participants: {e}")  # Imprime un mensaje de error en la consola.
-        return "<p>Error al recuperar los participantes.</p>", 500  # Devuelve un mensaje de error simple en caso de que no se puedan recuperar los participantes.
- """
 
 if __name__ == "__main__":  # Comprueba si el script se está ejecutando directamente.
     

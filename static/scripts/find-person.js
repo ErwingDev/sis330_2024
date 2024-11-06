@@ -3,7 +3,7 @@ const socket = io.connect('http://' + document.domain + ':' + location.port);
 
 socket.on('person_recognized', function (data) {
   console.log(data);
-  if(data.frame_find_person) {
+  if(data.frame_find_person && document.querySelector('#camera-close').style.display == 'block') {
     document.querySelector('#video').src = 'data:image/jpeg;base64,' + data.frame_find_person;
   }
 });
@@ -69,6 +69,7 @@ function getCheckSelected() {
     ci : '',
     file : '',
   }
+  if(!$('#cameraSelect :selected').val()) return rspta;
   for(let i = 0; i < checks.length; i++) {
     if(checks[i].checked) {
       rspta.name = checks[i].getAttribute('name');
