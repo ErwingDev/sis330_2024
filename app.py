@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, abort  # Importa las clases y funciones necesarias de Flask.
+from deep_sort.deep_sort import DeepSort
 from models1 import db, Event, Participant, Attendance, participants_events  # Importa los modelos y la conexión a la base de datos.
 import threading  # Importa 'threading' para manejar la ejecución en hilos separados.
 import cv2  # Importa OpenCV para procesar y analizar imágenes.
@@ -244,7 +245,8 @@ def render_find_person() :
 
 @app.route('/get-list-persons', methods=['POST'])
 def get_list_persons(): 
-    path_folder = "files/"
+    # path_folder = "files/"
+    path_folder = "datasets/data/"
     list = [f for f in os.listdir(path_folder)]
     return jsonify({'data': list})
 
@@ -266,22 +268,19 @@ def start_find_person():
     name = request.form['name']
     ci = request.form['ci']
     camera_index = request.form['camera']
+    find_name = file.split('__')[1]
 
     global stop_tracking_find_person
     stop_tracking_find_person.clear()
 
-    model_s = siamesas.SiameseNetworkWithAttention()
-    model_s.eval()
+    deep_sort_weights = 'deep_sort/deep/checkpoint/ckpt.t7'
+    trackerDeep = DeepSort(model_path=deep_sort_weights, max_age=15)
+    config_tracking = load_config("./face_tracking/config/config_tracking.yaml")
+    tracker = BYTETracker(args=config_tracking, frame_rate=30)
+    idtrack = None
+    matched_name = ""
+
     reference_image_path = 'files/'+file
-
-    reference_embedding = siamesas.get_multimodal_embedding(model_s, Image.open(reference_image_path).convert('RGB'), True)
-    embedding_original = reference_embedding
-    #           'Camiseta', 'vestido', 'chaqueta', 'pantalones', 'camisa', 'short', 'falda', 'suéter'
-    class_clothes = ['Tshirt', 'dress', 'jacket', 'pants', 'shirt', 'short', 'skirt', 'sweater']
-
-    imgOri = Image.open(reference_image_path).convert('RGB')
-    result_clothes = model_fashion(reference_image_path, stream=False)
-    info_clothes = siamesas.getInfoClothes(imgOri, result_clothes, class_clothes)
 
     with app.app_context():  # Crea un contexto de aplicación.
         cap = cv2.VideoCapture(int(camera_index))  # Abre la cámara especificada.
@@ -295,74 +294,112 @@ def start_find_person():
                     print("Error al leer desde la cámara. Reintentando...")
                     continue
 
-                persons = []
-                results = model_person(frame) 
-
+                results = model_person.predict(source=frame, stream=True, conf=0.70, iou=0.5)
                 for result in results:
-                    boxes = result.boxes
-                    for box in boxes :
-                        x1, y1, x2, y2 = box.xyxy[0]
-                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                        probability = ((box.conf[0]*100)/100).item()
-                        # if probability > 0.75 :
-                        if probability > 0.60 :
-                            _, frame_person = cap.read()
-                            frame_rgb = cv2.cvtColor(frame_person, cv2.COLOR_BGR2RGB)
-                            img_person = frame_rgb[y1:y2, x1:x2]
-                            persons.append({
-                                'img': img_person,
-                                'box': {'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2},
-                            })  
+                    boxes = result.boxes  # Boxes object for bbox outputs
+                    probs = result.probs  # Class probabilities for classification outputs
+                    cls = boxes.cls.tolist()  # Convert tensor to list
+                    xyxy = boxes.xyxy
+                    conf = boxes.conf
+                    xywh = boxes.xywh
 
-                if len(persons) > 0 :
-                    for person in persons:
-                        frame_pil = Image.fromarray(person['img'])
-                        frame_tensor = siamesas.transform(frame_pil).unsqueeze(0)
-                        
-                        with torch.no_grad():
-                            frame_embedding = model_s(frame_tensor, frame_tensor, frame_tensor)  
 
-                        condition_fashion = False
-                        aux = ""
-                        results_clothes = model_fashion(person['img'])
-                        for r in results_clothes :
-                            boxes_ = r.boxes
-                            for box_ in boxes_ :
-                                x1_, y1_, x2_, y2_ = box_.xyxy[0]
-                                x1_, y1_, x2_, y2_ = int(x1_), int(y1_), int(x2_), int(y2_)
-                                label = class_clothes[int(box_.cls[0])]
-                                # cropped_img = img_person[y1_:y2_, x1_:x2_]
-                                cropped_img = person['img'][y1_:y2_, x1_:x2_]
-                                hsv_img = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2HSV)
-                                hist = cv2.calcHist([hsv_img], [0], None, [256], [0, 256])
-                                predominant_color = np.argmax(hist)
-                                # ori_color = None
+                conf = conf.detach().cpu().numpy()
+                xyxy = xyxy.detach().cpu().numpy()
+                bboxes_xywh = xywh
+                bboxes_xywh = xywh.cpu().numpy()
+                bboxes_xywh = np.array(bboxes_xywh, dtype=float)
+                tracks = trackerDeep.update(bboxes_xywh, conf, frame)
+                for track in trackerDeep.tracker.tracks:
+                    if not track.is_confirmed() or track.time_since_update > 0: 
+                        continue
 
-                                condition_fashion = siamesas.exists_color(predominant_color, info_clothes)
-                                print(condition_fashion)
+                    track_id = track.track_id
+                    hits = track.hits
+                    x1, y1, x2, y2 = track.to_tlbr()  # Get bounding box coordinates in (x1, y1, x2, y2) format
+                    w = x2 - x1  # Calculate width
+                    h = y2 - y1  # Calculate height
 
-                                # aux = label+" "+str(ori_color)
-                                # print(label, predominant_color, ori_color)
-                                # if ori_color and (ori_color <= predominant_color+10 and predominant_color-10 <= ori_color) :
-                                # if ori_color and (ori_color <= predominant_color+5 and predominant_color-5 <= ori_color) :
+                    # Set color values for red, blue, and green
+                    color = (0, 255, 0)  # (B, G, R)
 
-                        distance = siamesas.euclidean_distance(reference_embedding, frame_embedding)
-                        # cv2.putText(frame, str(round(distance.item(), 2))+" "+str(condition_fashion), (person['box']['x1'], person['box']['y2']-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                        # threshold = 14
-                        threshold = 12.5
-                        print(f'Persona detectada en el fotograma. Distancia: {distance.item()}')
-                        if distance.item() < threshold:
-                        # if distance.item() < threshold and condition_fashion :
-                        # if distance.item() <= threshold or condition_fashion :
-                        # if distance.item() < threshold and (not condition_fashion or condition_fashion) :
-                            distance_aux =  siamesas.euclidean_distance(reference_embedding, embedding_original)
-                            if distance_aux.item() <= 12 and (not condition_fashion or condition_fashion) : 
-                                print(distance_aux.item(), condition_fashion)
-                                reference_embedding = siamesas.get_multimodal_embedding(model_s, frame_pil)
-                                cv2.rectangle(frame, (person['box']['x1'], person['box']['y1']), (person['box']['x2'], person['box']['y2']), (0, 255, 0), 3)
-                                cv2.putText(frame, f'{name}', (person['box']['x1'], person['box']['y2']-10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                            else :
-                                reference_embedding = embedding_original
+                    if track_id == idtrack :
+                        cv2.rectangle(frame, (int(x1), int(y1)), (int(x1 + w), int(y1 + h)), color, 2)
+
+                    # if matched_name == 'Unknown' and track_id == idtrack :
+                        # idtrack = None
+
+                    text_color = (0, 0, 0)  # Black color for text
+                    # cv2.putText(frame, f"{'person'}-{track_id} - {matched_name}", (int(x1) + 10, int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
+                    cv2.putText(frame, f"{'person'}-{track_id}", (int(x1) + 10, int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
+
+                    # unique_track_ids.add(track_id)
+                    person_image = frame[int(y1):int(y2), int(x1):int(x2)]
+                    print(person_image.shape[1], len(person_image))
+                    # if len(person_image) == 0 :
+                    if person_image.shape[1] == 0 or len(person_image) == 0 :
+                        continue
+                    outputs, img_info, bboxes, landmarks = detector.detect_tracking(image=frame)
+                    # outputs, img_info, bboxes, landmarks = detector.detect_tracking(image=person_image)
+                    if outputs is not None:
+                        online_targets = tracker.update(outputs, [img_info["height"], img_info["width"]], (128, 128))
+                        tracking_bboxes = []
+                        tracking_ids = []
+
+                        for t in online_targets:
+                            print(f"Stop.tracking: FOR t {stop_tracking_event.is_set()}")
+                            tlwh = t.tlwh  # bounding box en formato [x, y, width, height]
+                            tracking_id_face = t.track_id
+                            x, y, w, h = map(int, tlwh)
+                            tracking_bboxes.append([x, y, x + w, y + h])
+                            tracking_ids.append(tracking_id_face)
+
+                        for tid, tbbox in zip(tracking_ids, tracking_bboxes):
+                            print(f"Stop.tracking: FOR tid {stop_tracking_event.is_set()}")
+                            x_min, y_min, x_max, y_max = map(int, tbbox)
+                            # cv2.rectangle(person_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+
+                            matched_name = "Unknown"
+                            highest_score = 0.40
+
+                            for j, dbbox in enumerate(bboxes):
+                                print(f"Stop.tracking: FOR j {stop_tracking_event.is_set()}") 
+
+                                similarity_score = mapping_bbox(tbbox, dbbox)
+                                print(f"Similitud entre tbbox y dbbox: {similarity_score}")
+                                if similarity_score > 0.9:
+                                    img = img_info["raw_img"]
+                                    face_alignment = norm_crop(img, landmark=landmarks[j])
+
+                                    if face_alignment is not None:
+                                        print(f"Procesando cara alineada: Dimensiones - {face_alignment.shape}")
+                                    else:
+                                        print("Error: face_alignment es None")
+                                        continue
+
+                                    print("Antes de recognition: ")
+                                    print(f"Imagen alineada tipo: {type(face_alignment)}, dimensiones: {face_alignment.shape}")
+
+                                    score, name = recognition(face_alignment)
+
+                                    print(f"Resultado de recognition -> Score: {score}, Nombre: {name}")
+
+                                    if score > highest_score:
+                                        highest_score = score
+                                        # matched_name = name if score > highest_score else "Unknown"
+                                        name_person = name.split('__')
+                                        name_person = name_person[1] if len(name_person) > 1 else name_person
+                                        matched_name = name_person
+                                        print(name_person)
+                                        if name_person == find_name :
+                                        # if name_person == 'erwing_choquerive' :
+                                        # if name_person == 'rodrigo_choq' :
+                                            idtrack = track_id
+                                    """ elif idtrack == track_id :
+                                        matched_name = "Unknown" """
+                                    
+                                    cv2.putText(frame, f'{matched_name} - {idtrack} - {tid}', (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
                 
                 _, buffer = cv2.imencode('.jpg', frame)
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
