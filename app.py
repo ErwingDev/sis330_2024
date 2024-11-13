@@ -106,6 +106,14 @@ def saveImageOneBase64(file, folder_name, file_name) :
     image = Image.open(image_stream)
     image.save(folder_name+"/"+file_name+".jpg")
 
+def getImageOfBase64(file) : 
+    if "data:image" in file:
+        file = file.split(",")[1]
+    image_bytes = base64.b64decode(file)
+    image_stream = BytesIO(image_bytes)
+    image = Image.open(image_stream)
+    return image
+
 
 @app.route('/save-faces', methods=['POST'])
 def save_faces(): 
@@ -162,6 +170,36 @@ def save_crop():
         'message': 'Guardado correctamente.'
     })
 
+@app.route('/get_capture_body', methods=['POST'])
+def get_capture_body() :
+    data = data = request.json  
+    image = data['image']
+
+    frame_crop = ""
+    frame = getImageOfBase64(image).convert('RGB')
+    frame = np.array(frame)
+    results = model_person(frame)
+    for result in results:
+        boxes = result.boxes
+        for box in boxes :
+            x1, y1, x2, y2 = box.xyxy[0]
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+            probability = ((box.conf[0]*100)/100).item()
+            if probability > 0.75 :
+                img_crop = frame[y1:y2, x1:x2]
+                _, buffer_crop = cv2.imencode('.jpg', img_crop)
+                frame_crop = base64.b64encode(buffer_crop).decode('utf-8')
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                _, buffer = cv2.imencode('.jpg', frame)
+                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                socketio.emit('person_recognized', {'body_person': frame_base64, 'status': '', 'person_crop': frame_crop, 'type': 'body'})
+                    
+    
+    return jsonify({
+        'status': 200,
+        'message': frame_crop
+    })
+
 
 @app.route('/detect_body', methods=['POST']) 
 def detect_body(): 
@@ -205,8 +243,9 @@ def detect_body():
                                 # cv2.putText(frame, str(h_ratio), (x1, y2-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                                 # if h_ratio < 0.75 : 
                                 frame_crop = ''
-                                # if h_ratio <= 0.96 : 
-                                if h_ratio <= 0.85 : 
+                                if h_ratio <= 0.96 : 
+                                # if h_ratio <= 0.85 : 
+                                    print(frame)
                                     # cv2.putText(frame, str(h_ratio), (x1, y2-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                                     img_crop = frame[y1:y2, x1:x2]
                                     _, buffer_crop = cv2.imencode('.jpg', img_crop)
