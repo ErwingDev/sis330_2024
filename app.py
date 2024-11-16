@@ -22,6 +22,10 @@ import subprocess
 from ultralytics import YOLO
 import siamesas
 import numpy as np
+import torchreid
+import torch
+from torchvision import transforms
+from scipy.spatial.distance import cosine
 
 #from threading import Event
 
@@ -48,6 +52,29 @@ detector = SCRFD(model_file="face_detection/scrfd/weights/scrfd_10g_bnkps.onnx")
 recognizer = iresnet_inference(model_name="r100", path="face_recognition/arcface/weights/arcface_r100.pth", device=device)  # Carga el modelo ArcFace para reconocimiento facial usando ResNet.
 images_names, images_embs = read_features(feature_path="./datasets/face_features/feature")  # Lee las características faciales prealmacenadas y sus nombres desde la ruta especificada.
 
+
+model_reid = torchreid.models.build_model(
+    name='osnet_x1_0',
+    num_classes=3,
+    loss="softmax",
+    pretrained=True  
+)
+model_reid.to(device)
+model_reid.eval()
+torchreid.utils.load_pretrained_weights(model_reid, './models/model.pth.tar-300')
+transform = transforms.Compose([
+    transforms.ToTensor(),
+])
+
+def extract_features(image):
+    image = transform(image).unsqueeze(0)
+    with torch.no_grad():
+        features = model_reid(image)
+    return features.cpu().numpy()[0]
+
+def compare_embeddings(features_1, features_2):
+    similarity = 1 - cosine(features_1, features_2)
+    return similarity
 
 def list_cameras():  # Define una función para listar las cámaras disponibles.
     index = 0  # Inicializa el índice de la cámara.
@@ -318,8 +345,12 @@ def start_find_person():
     tracker = BYTETracker(args=config_tracking, frame_rate=30)
     idtrack = None
     matched_name = ""
+    find_person = False
+    prob_seg = 0
+    person_seg = None
 
-    reference_image_path = 'files/'+file
+    reference_image_path = 'files/'+file+'.jpg'
+    target_features = extract_features(Image.open(reference_image_path).convert('RGB'))
 
     with app.app_context():  # Crea un contexto de aplicación.
         cap = cv2.VideoCapture(int(camera_index))  # Abre la cámara especificada.
@@ -333,6 +364,7 @@ def start_find_person():
                     print("Error al leer desde la cámara. Reintentando...")
                     continue
 
+                # '''
                 results = model_person.predict(source=frame, stream=True, conf=0.70, iou=0.5)
                 for result in results:
                     boxes = result.boxes  # Boxes object for bbox outputs
@@ -349,6 +381,7 @@ def start_find_person():
                 bboxes_xywh = xywh.cpu().numpy()
                 bboxes_xywh = np.array(bboxes_xywh, dtype=float)
                 tracks = trackerDeep.update(bboxes_xywh, conf, frame)
+                list_ids = [int(track.track_id) for track in trackerDeep.tracker.tracks if track.is_confirmed()]
                 for track in trackerDeep.tracker.tracks:
                     if not track.is_confirmed() or track.time_since_update > 0: 
                         continue
@@ -362,83 +395,43 @@ def start_find_person():
                     # Set color values for red, blue, and green
                     color = (0, 255, 0)  # (B, G, R)
 
+                    person_image = frame[int(y1):int(y2), int(x1):int(x2)]
+                    person_features = extract_features(person_image)
+                    similarity = compare_embeddings(person_features, target_features)
+
+                    threshold = 0.7
+                    if similarity > threshold :
+                        if similarity.item() > prob_seg : 
+                            prob_seg = similarity.item()
+                            idtrack = track_id
+
                     if track_id == idtrack :
                         cv2.rectangle(frame, (int(x1), int(y1)), (int(x1 + w), int(y1 + h)), color, 2)
 
-                    # if matched_name == 'Unknown' and track_id == idtrack :
-                        # idtrack = None
-
-                    text_color = (0, 0, 0)  # Black color for text
-                    # cv2.putText(frame, f"{'person'}-{track_id} - {matched_name}", (int(x1) + 10, int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
-                    cv2.putText(frame, f"{'person'}-{track_id}", (int(x1) + 10, int(y1) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 1, cv2.LINE_AA)
-
-                    # unique_track_ids.add(track_id)
-                    person_image = frame[int(y1):int(y2), int(x1):int(x2)]
-                    print(person_image.shape[1], len(person_image))
-                    # if len(person_image) == 0 :
-                    if person_image.shape[1] == 0 or len(person_image) == 0 :
+                    if idtrack and int(idtrack) not in list_ids :
+                        idtrack = None
+                        prob_seg = 0
                         continue
-                    outputs, img_info, bboxes, landmarks = detector.detect_tracking(image=frame)
-                    # outputs, img_info, bboxes, landmarks = detector.detect_tracking(image=person_image)
-                    if outputs is not None:
-                        online_targets = tracker.update(outputs, [img_info["height"], img_info["width"]], (128, 128))
-                        tracking_bboxes = []
-                        tracking_ids = []
+                    # '''
 
-                        for t in online_targets:
-                            print(f"Stop.tracking: FOR t {stop_tracking_event.is_set()}")
-                            tlwh = t.tlwh  # bounding box en formato [x, y, width, height]
-                            tracking_id_face = t.track_id
-                            x, y, w, h = map(int, tlwh)
-                            tracking_bboxes.append([x, y, x + w, y + h])
-                            tracking_ids.append(tracking_id_face)
+                '''
+                results = model_person.predict(source=frame, stream=True, conf=0.70, iou=0.5)
+                for result in results:
+                    boxes = result.boxes
+                    for box in boxes :
+                        x1, y1, x2, y2 = box.xyxy[0]
+                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                        person = frame[y1:y2, x1:x2]
+                        person_image = person
+                        person_features = extract_features(person_image)
+                        similarity = compare_embeddings(person_features, target_features)
+                        # threshold = 0.65
+                        threshold = 0.7
 
-                        for tid, tbbox in zip(tracking_ids, tracking_bboxes):
-                            print(f"Stop.tracking: FOR tid {stop_tracking_event.is_set()}")
-                            x_min, y_min, x_max, y_max = map(int, tbbox)
-                            # cv2.rectangle(person_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-
-                            matched_name = "Unknown"
-                            highest_score = 0.40
-
-                            for j, dbbox in enumerate(bboxes):
-                                print(f"Stop.tracking: FOR j {stop_tracking_event.is_set()}") 
-
-                                similarity_score = mapping_bbox(tbbox, dbbox)
-                                print(f"Similitud entre tbbox y dbbox: {similarity_score}")
-                                if similarity_score > 0.9:
-                                    img = img_info["raw_img"]
-                                    face_alignment = norm_crop(img, landmark=landmarks[j])
-
-                                    if face_alignment is not None:
-                                        print(f"Procesando cara alineada: Dimensiones - {face_alignment.shape}")
-                                    else:
-                                        print("Error: face_alignment es None")
-                                        continue
-
-                                    print("Antes de recognition: ")
-                                    print(f"Imagen alineada tipo: {type(face_alignment)}, dimensiones: {face_alignment.shape}")
-
-                                    score, name = recognition(face_alignment)
-
-                                    print(f"Resultado de recognition -> Score: {score}, Nombre: {name}")
-
-                                    if score > highest_score:
-                                        highest_score = score
-                                        # matched_name = name if score > highest_score else "Unknown"
-                                        name_person = name.split('__')
-                                        name_person = name_person[1] if len(name_person) > 1 else name_person
-                                        matched_name = name_person
-                                        print(name_person)
-                                        if name_person == find_name :
-                                        # if name_person == 'erwing_choquerive' :
-                                        # if name_person == 'rodrigo_choq' :
-                                            idtrack = track_id
-                                    """ elif idtrack == track_id :
-                                        matched_name = "Unknown" """
-                                    
-                                    cv2.putText(frame, f'{matched_name} - {idtrack} - {tid}', (x_min, y_min - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                
+                        if similarity > threshold:
+                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    '''
+                            
                 
                 _, buffer = cv2.imencode('.jpg', frame)
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
