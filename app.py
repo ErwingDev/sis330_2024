@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, jsonify, abort  # Importa las clases y funciones necesarias de Flask.
-from deep_sort.deep_sort import DeepSort
 from models1 import db, Event, Participant, Attendance, participants_events  # Importa los modelos y la conexión a la base de datos.
 import threading  # Importa 'threading' para manejar la ejecución en hilos separados.
 import cv2  # Importa OpenCV para procesar y analizar imágenes.
@@ -17,27 +16,21 @@ from flask_socketio import SocketIO, emit  # Importa 'SocketIO' y 'emit' para ma
 import os
 import base64
 from PIL import Image
-from io import BytesIO
 import subprocess
 from ultralytics import YOLO
-import siamesas
 import numpy as np
-import torchreid
-import torch
-from torchvision import transforms
-from scipy.spatial.distance import cosine
+from util import Util
+from train_torch import init_train
 
 #from threading import Event
-
+utils = Util()
 model_person = YOLO('./models/model_people.pt')
-model_fashion = YOLO('./models/model_fashion.pt')
 
 #app = Flask(__name__)
 app = Flask(__name__, static_folder='static')  # Crea una instancia de la aplicación Flask y define la carpeta 'static' para archivos estáticos.
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/face_recognition_db'  # Configura la URI de la base de datos MySQL para SQLAlchemy.
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # Desactiva el seguimiento de modificaciones para ahorrar recursos.
 db.init_app(app)  # Inicializa la aplicación Flask con la base de datos utilizando SQLAlchemy.
-
 
 
 # Inicializa SocketIO con la aplicación Flask
@@ -52,29 +45,6 @@ detector = SCRFD(model_file="face_detection/scrfd/weights/scrfd_10g_bnkps.onnx")
 recognizer = iresnet_inference(model_name="r100", path="face_recognition/arcface/weights/arcface_r100.pth", device=device)  # Carga el modelo ArcFace para reconocimiento facial usando ResNet.
 images_names, images_embs = read_features(feature_path="./datasets/face_features/feature")  # Lee las características faciales prealmacenadas y sus nombres desde la ruta especificada.
 
-
-model_reid = torchreid.models.build_model(
-    name='osnet_x1_0',
-    num_classes=3,
-    loss="softmax",
-    pretrained=True  
-)
-model_reid.to(device)
-model_reid.eval()
-torchreid.utils.load_pretrained_weights(model_reid, './models/model.pth.tar-300')
-transform = transforms.Compose([
-    transforms.ToTensor(),
-])
-
-def extract_features(image):
-    image = transform(image).unsqueeze(0)
-    with torch.no_grad():
-        features = model_reid(image)
-    return features.cpu().numpy()[0]
-
-def compare_embeddings(features_1, features_2):
-    similarity = 1 - cosine(features_1, features_2)
-    return similarity
 
 def list_cameras():  # Define una función para listar las cámaras disponibles.
     index = 0  # Inicializa el índice de la cámara.
@@ -105,41 +75,12 @@ stop_tracking_event = threading.Event()  # Crea un evento de hilo para señaliza
 stop_tracking_detect_person = threading.Event()  # Crea un evento de hilo para señalizar cuando detener el seguimiento de rostros.
 stop_tracking_find_person = threading.Event()  # Crea un evento de hilo para señalizar cuando detener el seguimiento de rostros.
 
+import logging  # Importa el módulo logging para registrar mensajes de depuración.
+logging.basicConfig(level=logging.DEBUG)  # Configura el nivel de logging a DEBUG, lo que permite registrar mensajes detallados para depuración.
 
 @app.route('/')  # Define la ruta para la página principal de la aplicación.
 def index():  # Define la función que se ejecutará cuando se acceda a la ruta principal.
     return render_template('add-face.html')  # Renderiza la plantilla 'index.html' pasando los eventos, cámaras y participantes reconocidos como contexto.
-
-import logging  # Importa el módulo logging para registrar mensajes de depuración.
-
-logging.basicConfig(level=logging.DEBUG)  # Configura el nivel de logging a DEBUG, lo que permite registrar mensajes detallados para depuración.
-
-def saveImagesBase64(faces, folder_name) :
-    index = 1
-    for base64_string in faces :
-        if "data:image" in base64_string:
-            base64_string = base64_string.split(",")[1]
-        image_bytes = base64.b64decode(base64_string)
-        image_stream = BytesIO(image_bytes)
-        image = Image.open(image_stream)
-        image.save(folder_name+"/image"+str(index)+".jpg")
-        index = index + 1
-
-def saveImageOneBase64(file, folder_name, file_name) :
-    if "data:image" in file:
-        file = file.split(",")[1]
-    image_bytes = base64.b64decode(file)
-    image_stream = BytesIO(image_bytes)
-    image = Image.open(image_stream)
-    image.save(folder_name+"/"+file_name+".jpg")
-
-def getImageOfBase64(file) : 
-    if "data:image" in file:
-        file = file.split(",")[1]
-    image_bytes = base64.b64decode(file)
-    image_stream = BytesIO(image_bytes)
-    image = Image.open(image_stream)
-    return image
 
 
 @app.route('/save-faces', methods=['POST'])
@@ -151,9 +92,8 @@ def save_faces():
     folder_name = 'datasets/new_persons/'+ci+'__'+name.replace(" ", "_")
     if not os.path.exists(folder_name):
         os.makedirs(folder_name)
-        # print(f"Carpeta '{folder_name}' creada.")
     
-    saveImagesBase64(faces, folder_name)
+    utils.save_images_base64(faces, folder_name)
     try:
         result = subprocess.run(['python', 'add_persons.py'], capture_output=True, text=True)
         print("Salida del script add.py:")
@@ -177,21 +117,18 @@ def save_faces():
 
 @app.route('/add-person')
 def render_add_person(): 
-    """ cameras = list_cameras()
-    print("Cámaras disponibles:", cameras) """
-    cameras = list_cameras()
-    # print("Cámaras seleccionadas:", request.args.getlist('camera'))
-    # return render_template('add-person.html', cameras=cameras)
-    return render_template('add-person.html', cameras=cameras)
+    return render_template('add-person.html', cameras=list_cameras())
+
+@app.route('/add-person-for-face')
+def render_add_person_with_face(): 
+    return render_template('add-person-for-face.html', cameras=list_cameras())
 
 
 @app.route('/save-crop', methods=['POST'])
 def save_crop(): 
     person = str.lower(request.form['person'])
-    img = request.form['image']
-    """ name_person = person.split('__')
-    name_person = name_person[1] if len(name_person) > 1 else name_person  """                               
-    saveImageOneBase64(img, 'files', person)
+    img = request.form['image']          
+    utils.save_image_one_base64(str(img), 'files', person)
     return jsonify({
         'status': 200,
         'message': 'Guardado correctamente.'
@@ -203,7 +140,7 @@ def get_capture_body() :
     image = data['image']
 
     frame_crop = ""
-    frame = getImageOfBase64(image).convert('RGB')
+    frame = utils.get_image_of_base64(image).convert('RGB')
     frame = np.array(frame)
     results = model_person(frame)
     for result in results:
@@ -297,34 +234,178 @@ def detect_body():
 def stop_detect_body(): 
     global stop_tracking_detect_person
     stop_tracking_detect_person.set() 
-
     for camera_index, cap in camera_instances.items():  
         cap.release() 
 
     camera_instances.clear()
     return jsonify({'status': 'Detect Boyd stopped'})
 
+
+@app.route('/detect-body-with-face', methods=['POST']) 
+def detect_body_with_face(): 
+    data = request.json  
+    camera_indices = data['camera_indices']
+
+    find_name = False
+    name = ""
+    global stop_tracking_detect_person
+    stop_tracking_detect_person.clear()
+    config_tracking = load_config("./face_tracking/config/config_tracking.yaml")  # Carga la configuración de seguimiento desde un archivo YAML.
+    tracker = BYTETracker(args=config_tracking, frame_rate=30)  # Crea una instancia del rastreador BYTETracker con la configuración y una tasa de cuadros de 30 fps.
+    # camera_instances[camera_index] = cap  # Almacena la instancia de la cámara en el diccionario.
+    # thread = threading.Thread(target=process_tracking, args=(camera_index, detector, tracker))  # Crea un nuevo hilo para ejecutar el seguimiento en paralelo.
+    # thread.start()  # Inicia el hilo.
+    # tracking_threads.append(thread)  # Almacena el hilo en la lista de hilos de seguimiento.
+
+
+    for camera_index in camera_indices:
+
+        with app.app_context():  # Crea un contexto de aplicación.
+            cap = cv2.VideoCapture(int(camera_index))  # Abre la cámara especificada.
+            if not cap.isOpened():  # Verifica si la cámara se abrió correctamente.
+                print(f"Error al abrir la cámara {camera_index}")
+                return
+            print(f"Stop.tracking:  WHIT {stop_tracking_event.is_set()}") 
+            try:
+                while not stop_tracking_detect_person.is_set():
+                    ret_val, frame = cap.read()  # Lee un cuadro de la cámara.
+                    if not ret_val:  # Verifica si se pudo leer un cuadro.
+                        print("Error al leer desde la cámara. Reintentando...")
+                        continue
+
+                    
+                    outputs, img_info, bboxes, landmarks = detector.detect_tracking(image=frame)
+                    if outputs is not None:
+                        online_targets = tracker.update(outputs, [img_info["height"], img_info["width"]], (128, 128))
+                        tracking_bboxes = []
+                        tracking_ids = []
+
+                        for t in online_targets:
+                            tlwh = t.tlwh  # bounding box en formato [x, y, width, height]
+                            tracking_id = t.track_id
+                            x, y, w, h = map(int, tlwh)
+                            tracking_bboxes.append([x, y, x + w, y + h])
+                            tracking_ids.append(tracking_id)
+
+                        for tid, tbbox in zip(tracking_ids, tracking_bboxes):
+                            print(f"Stop.tracking: FOR tid {stop_tracking_event.is_set()}")
+                            x_min, y_min, x_max, y_max = map(int, tbbox)
+                            # cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+
+                            # matched_name = "Unknown"
+                            # highest_score = 0.0
+
+                            for j, dbbox in enumerate(bboxes):
+                                print(f"Stop.tracking: FOR j {stop_tracking_event.is_set()}") 
+
+                                similarity_score = mapping_bbox(tbbox, dbbox)
+                                print(f"Similitud entre tbbox y dbbox: {similarity_score}")
+                                if similarity_score > 0.9:
+                                    img = img_info["raw_img"]
+                                    face_alignment = norm_crop(img, landmark=landmarks[j])
+
+                                    if face_alignment is not None:
+                                        print(f"Procesando cara alineada: Dimensiones - {face_alignment.shape}")
+                                    else:
+                                        print("Error: face_alignment es None")
+                                        continue
+
+                                    print("Antes de recognition: ")
+                                    print(f"Imagen alineada tipo: {type(face_alignment)}, dimensiones: {face_alignment.shape}")
+
+                                    score, name = recognition(face_alignment)
+
+                                    print(f"Resultado de recognition -> Score: {score}, Nombre: {name}")
+
+                                    """ if score > highest_score:
+                                        highest_score = score
+                                        matched_name = name if score > 0.25 else "Unknown" """
+
+                                    if score > 0.60 :
+                                        find_name = True
+                                        name_person = name.split('__')
+                                        name_person = name_person[1] if len(name_person) > 1 else name_person
+                                        cv2.putText(frame, f'{name_person}', (x_min, y_min - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                                        
+                    """ _, buffer = cv2.imencode('.jpg', frame)
+                    frame_base64 = base64.b64encode(buffer).decode('utf-8')
+
+                    socketio.emit('person_recognized', {'person': name, 'frame': frame_base64, 'type': 'face'}) """
+
+                    h_ratio = 200          
+                    frame_crop = ""          
+                    if find_name :
+                    
+                        results = model_person(frame)
+
+                        for result in results:
+                            boxes = result.boxes
+                            for box in boxes :
+                                x1, y1, x2, y2 = box.xyxy[0]
+                                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                                probability = ((box.conf[0]*100)/100).item()
+                                if probability > 0.75 :
+                                    h = y2 - y1
+                                    frame_h, frame_w, canales = frame.shape                                
+                                    h_ratio = h / frame_h
+                                    frame_crop = ''
+                                    if h_ratio <= 0.96 : 
+                                    # if h_ratio <= 0.85 : 
+                                        # cv2.putText(frame, str(h_ratio), (x1, y2-10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                                        img_crop = frame[y1:y2, x1:x2]
+                                        _, buffer_crop = cv2.imencode('.jpg', img_crop)
+                                        frame_crop = base64.b64encode(buffer_crop).decode('utf-8')
+                                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+
+                    _, buffer = cv2.imencode('.jpg', frame)
+                    frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                    socketio.emit('detect-face-body', {'frame': frame_base64, 'status': h_ratio, 'person_crop': frame_crop, 'name': name})
+
+                    time.sleep(0.01)
+            finally:
+                cap.release()  # Libera la cámara al finalizar.
+                cv2.destroyAllWindows()  # Cierra todas las ventanas de OpenCV.
+    return jsonify({'status': 'Detect Body started'})
+
+
+@app.route('/stop-detect-body-face', methods=['POST'])
+def stop_detect_body_face(): 
+    global stop_tracking_detect_person
+    stop_tracking_detect_person.set() 
+    for camera_index, cap in camera_instances.items():  
+        cap.release() 
+
+    camera_instances.clear()
+    return jsonify({'status': 'Detect Boyd stopped'})
+
+
 @app.route('/find-person')
 def render_find_person() : 
-    cameras = list_cameras()
-    return render_template('find-person.html', cameras=cameras)
+    return render_template('find-person.html', cameras=list_cameras())
 
 @app.route('/get-list-persons', methods=['POST'])
 def get_list_persons(): 
-    # path_folder = "files/"
-    path_folder = "datasets/data/"
-    list = [f for f in os.listdir(path_folder)]
+    path_folder = "files/"
+    # path_folder = "datasets/data/"
+    list = [f.split('.jpg')[0] for f in os.listdir(path_folder)]
+    print(list)
     return jsonify({'data': list})
 
 @app.route('/stop-find-person', methods=['POST'])
 def stop_find_person(): 
     global stop_tracking_find_person
     stop_tracking_find_person.set() 
+    camera_index = request.form['camera']
 
-    for camera_index, cap in camera_instances.items():  
+    """ for camera_index, cap in camera_instances.items():  
         cap.release() 
 
-    camera_instances.clear()
+    camera_instances.clear() """
+    camera = cv2.VideoCapture(camera_index)
+    if camera.isOpened() :
+        camera.release()
+        
     return jsonify({'status': 'Find Person stopped'})
 
 
@@ -336,22 +417,14 @@ def start_find_person():
     camera_index = request.form['camera']
     find_name = file.split('__')[1]
 
-    global stop_tracking_find_person
-    stop_tracking_find_person.clear()
-
-    deep_sort_weights = 'deep_sort/deep/checkpoint/ckpt.t7'
-    trackerDeep = DeepSort(model_path=deep_sort_weights, max_age=15)
-    config_tracking = load_config("./face_tracking/config/config_tracking.yaml")
-    tracker = BYTETracker(args=config_tracking, frame_rate=30)
     idtrack = None
-    matched_name = ""
-    find_person = False
     prob_seg = 0
-    person_seg = None
 
     reference_image_path = 'files/'+file+'.jpg'
-    target_features = extract_features(Image.open(reference_image_path).convert('RGB'))
+    target_features = utils.extract_features(reference_image_path)
 
+    stop_tracking_find_person.clear() 
+    print(name, camera_index)
     with app.app_context():  # Crea un contexto de aplicación.
         cap = cv2.VideoCapture(int(camera_index))  # Abre la cámara especificada.
         if not cap.isOpened():  # Verifica si la cámara se abrió correctamente.
@@ -364,80 +437,52 @@ def start_find_person():
                     print("Error al leer desde la cámara. Reintentando...")
                     continue
 
-                # '''
-                results = model_person.predict(source=frame, stream=True, conf=0.70, iou=0.5)
-                for result in results:
-                    boxes = result.boxes  # Boxes object for bbox outputs
-                    probs = result.probs  # Class probabilities for classification outputs
-                    cls = boxes.cls.tolist()  # Convert tensor to list
-                    xyxy = boxes.xyxy
-                    conf = boxes.conf
-                    xywh = boxes.xywh
+                results = model_person.predict(source=frame, stream=True, conf=0.80, iou=0.5)
 
-
-                conf = conf.detach().cpu().numpy()
-                xyxy = xyxy.detach().cpu().numpy()
-                bboxes_xywh = xywh
-                bboxes_xywh = xywh.cpu().numpy()
-                bboxes_xywh = np.array(bboxes_xywh, dtype=float)
-                tracks = trackerDeep.update(bboxes_xywh, conf, frame)
-                list_ids = [int(track.track_id) for track in trackerDeep.tracker.tracks if track.is_confirmed()]
-                for track in trackerDeep.tracker.tracks:
+                tracks = utils.get_tracks(results, frame)
+                # print(type(tracks), tracks)
+                list_ids = tracks['ids']
+                for track in tracks['tracks']:
                     if not track.is_confirmed() or track.time_since_update > 0: 
                         continue
 
                     track_id = track.track_id
                     hits = track.hits
-                    x1, y1, x2, y2 = track.to_tlbr()  # Get bounding box coordinates in (x1, y1, x2, y2) format
-                    w = x2 - x1  # Calculate width
-                    h = y2 - y1  # Calculate height
-
-                    # Set color values for red, blue, and green
-                    color = (0, 255, 0)  # (B, G, R)
+                    x1, y1, x2, y2 = track.to_tlbr() 
+                    w = x2 - x1 
+                    h = y2 - y1
+    
+                    """ altura, ancho, canales = frame.shape
+                    print(f"Ancho: {ancho}, Alto: {altura}")
+                    print(x1, y1, x2, y2) """
 
                     person_image = frame[int(y1):int(y2), int(x1):int(x2)]
-                    person_features = extract_features(person_image)
-                    similarity = compare_embeddings(person_features, target_features)
+                    print(person_image)
+                    # name_temp = "temp_frame.jpg"
+                    # cv2.imwrite(name_temp, person_image)
+                    # person_features = utils.extract_features(person_image)
+                    person_image = cv2.cvtColor(person_image, cv2.COLOR_BGR2RGB)
+                    person_features = utils.extract_features(person_image)
 
-                    threshold = 0.7
+                    similarity = utils.compare_embeddings(person_features, target_features)
+
+                    threshold = 0.75
                     if similarity > threshold :
                         if similarity.item() > prob_seg : 
                             prob_seg = similarity.item()
                             idtrack = track_id
 
                     if track_id == idtrack :
-                        cv2.rectangle(frame, (int(x1), int(y1)), (int(x1 + w), int(y1 + h)), color, 2)
+                        cv2.rectangle(frame, (int(x1), int(y1)), (int(x1 + w), int(y1 + h)), (0, 255, 0), 2)
 
                     if idtrack and int(idtrack) not in list_ids :
                         idtrack = None
                         prob_seg = 0
                         continue
-                    # '''
-
-                '''
-                results = model_person.predict(source=frame, stream=True, conf=0.70, iou=0.5)
-                for result in results:
-                    boxes = result.boxes
-                    for box in boxes :
-                        x1, y1, x2, y2 = box.xyxy[0]
-                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                        person = frame[y1:y2, x1:x2]
-                        person_image = person
-                        person_features = extract_features(person_image)
-                        similarity = compare_embeddings(person_features, target_features)
-                        # threshold = 0.65
-                        threshold = 0.7
-
-                        if similarity > threshold:
-                            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    '''
-                            
                 
                 _, buffer = cv2.imencode('.jpg', frame)
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
-                socketio.emit('person_recognized', {'frame_find_person': frame_base64})
-                if cv2.waitKey(1) & 0xFF == ord('q'):  # Permite cerrar la ventana presionando 'q'.
-                    break
+                socketio.emit('person_recognized', {'frame_find_person': frame_base64, 'camera': camera_index})
 
                 time.sleep(0.01) 
         finally:
@@ -445,6 +490,86 @@ def start_find_person():
             cv2.destroyAllWindows() 
 
     return jsonify({'status': 'Find Person started'})
+
+
+@app.route('/photo-dataset')
+def photo_dataset() : 
+    return render_template('photo-dataset.html', cameras=list_cameras())
+
+
+@app.route('/start-train', methods=['POST'])
+def start_train() : 
+    try :
+        init_train()
+        return jsonify({
+            'status': 200,
+            'message': 'Guardado correctamente.'
+        })
+    except : 
+        return jsonify({
+            'status': 500,
+            'message': 'Error.'
+        })
+
+@app.route('/create-photo-dataset', methods=['POST'])
+def create_photo_dataset() : 
+    data = request.json  
+    camera_indices = data['camera_indices']
+
+    completed_photo = False
+    path = "datasets/reid-data/dataset_reid"
+    index = utils.get_index_file(path+'/train/')
+
+    for camera_index in camera_indices:
+        with app.app_context():  # Crea un contexto de aplicación.
+            cap = cv2.VideoCapture(int(camera_index))  # Abre la cámara especificada.
+            if not cap.isOpened():  # Verifica si la cámara se abrió correctamente.
+                print(f"Error al abrir la cámara {camera_index}")
+                return
+            print(f"Stop.tracking:  WHIT {stop_tracking_event.is_set()}") 
+            try:
+                count = 1
+                while not completed_photo :
+                    ret_val, frame = cap.read()  # Lee un cuadro de la cámara.
+                    if not ret_val:  # Verifica si se pudo leer un cuadro.
+                        print("Error al leer desde la cámara. Reintentando...")
+                        continue
+
+                    results = model_person.predict(source=frame, stream=True, conf=0.7)
+
+                    for result in results:
+                        boxes = result.boxes
+                        for box in boxes :
+                            x1, y1, x2, y2 = box.xyxy[0]
+                            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                            h = y2 - y1
+                            frame_h, frame_w, canales = frame.shape                                
+                            h_ratio = h / frame_h
+                            
+                            if h_ratio <= 0.96 : 
+                            # if h_ratio <= 0.85 :
+                                if count == 27 :
+                                    completed_photo = True 
+                                frame_person = frame[y1:y2, x1:x2]
+                                if count <= 20 :
+                                    cv2.imwrite(f'{path}/train/{str(index)}_c1_f{utils.get_token(5)}.jpg', frame_person)
+                                elif count <= 25 :
+                                    cv2.imwrite(f'{path}/gallery/{str(index)}_c1_f{utils.get_token(5)}.jpg', frame_person)
+                                else :
+                                    cv2.imwrite(f'{path}/query/{str(index)}_c2_f{utils.get_token(5)}.jpg', frame_person)
+                               
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                count = count + 1
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                        socketio.emit('photo-dataset', {'frame': frame_base64, 'status': completed_photo})
+                                
+                    time.sleep(0.05) 
+            finally:
+                cap.release()  # Libera la cámara al finalizar.
+                cv2.destroyAllWindows()  # Cierra todas las ventanas de OpenCV.
+    return jsonify({'status': 'Detect Body started'})
+
 
 
 @app.route('/start_tracking', methods=['POST'])  # Define la ruta para iniciar el seguimiento de rostros, utilizando el método POST.
@@ -490,6 +615,7 @@ def stop_tracking():  # Define la función que se ejecutará cuando se acceda a 
 def process_tracking(camera_index, detector, tracker):  # Define la función para procesar el seguimiento de una cámara.
     global stop_tracking_event, recognized_participants  # Declara variables globales.
 
+    name = ""
     with app.app_context():  # Crea un contexto de aplicación.
         cap = cv2.VideoCapture(int(camera_index))  # Abre la cámara especificada.
         if not cap.isOpened():  # Verifica si la cámara se abrió correctamente.
@@ -580,10 +706,8 @@ def process_tracking(camera_index, detector, tracker):  # Define la función par
 
 
 if __name__ == "__main__":  # Comprueba si el script se está ejecutando directamente.
-    
     with app.app_context():  # Crea un contexto de aplicación para ejecutar el siguiente bloque de código.
         db.create_all()  # Crea todas las tablas en la base de datos según los modelos definidos.
-
     socketio.run(app, debug=False)  # Inicia la aplicación Flask con SocketIO, sin habilitar el modo de depuración.
 
 

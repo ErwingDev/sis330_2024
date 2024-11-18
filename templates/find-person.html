@@ -4,43 +4,67 @@
 
 {% block content %}
 
-    <div id="div-add-face" class="row">
-        <div class="col-12 col-md-3">
+    <div class="row">
+        <div class="col-12 col-md-2 pl-0">
             <div>
                 <span>Lista De Personas</span>
             </div>
-            <div class="container">
+            <div class="container pr-0">
                 <div id="list-persons" class="form-group">
-                    <!-- <div class="d-block">
-                        <input type="checkbox" file="hola_13" name="hola1" ci="123" class="check-list"> Juan
-                    </div>-->
                 </div>
             </div>
         </div>
-        <div class="col-12 col-md-9 mx-auto mb-4">
+        <div class="col-12 col-md-10 mx-auto mb-4">
+                
             <div class="row">
-                <div id="div-select-camera" class="col-12 col-md-10 mx-auto mb-2">
-                    <select id="cameraSelect" class="form-control">
-                        <option value="">Seleccione su cámara</option>
-                        {% for camera in cameras %}
-                            <option value="{{camera}}">Camera {{camera}}</option>
-                        {% endfor %}
-                    </select>
+                <div class="col-12 col-md-6">
+                    <div id="div-select-camera" class="col-12 mx-auto mb-2">
+                        <select id="cameraSelect" class="form-control">
+                            <option value="">Seleccione su cámara</option>
+                            {% for camera in cameras %}
+                                <option value="{{camera}}">Camera {{camera}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex justify-content-center">
+                        <img id="video" class="rounded bg-video-camera-find" src="static/images/camera.png" width="100%"/>
+                    </div>
+    
+                    <div class="col-12 d-flex justify-content-center">
+                        <button type="button" id="camera-button" class="m-2 btn btn-success btn-sm mt-2">
+                            <i class="fas fa-camera"></i>
+                            Abrir Cámara
+                        </button>
+                        <button type="button" id="camera-close" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
+                            <i class="fas fa-camera"></i> 
+                            Cerrar Cámara
+                        </button>
+                    </div>
                 </div>
 
-                <div class="col-12 d-flex justify-content-center">
-                    <img id="video" class="rounded bg-video-camera-find" src="static/images/camera.png"/>
-                </div>
-
-                <div class="col-12 d-flex justify-content-center">
-                    <button type="button" id="camera-button" class="m-2 btn btn-success btn-sm mt-2">
-                        <i class="fas fa-camera"></i>
-                        Abrir Cámara
-                    </button>
-                    <button type="button" id="camera-close" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
-                        <i class="fas fa-camera"></i> 
-                        Cerrar Cámara
-                    </button>
+                <div class="col-12 col-md-6">
+                    <div id="div-select-camera" class="col-12 mx-auto mb-2">
+                        <select id="cameraSelect-2" class="form-control">
+                            <option value="">Seleccione su cámara</option>
+                            {% for camera in cameras %}
+                                <option value="{{camera}}">Camera {{camera}}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex justify-content-center">
+                        <img id="video-2" class="rounded bg-video-camera-find" src="static/images/camera.png" width="100%"/>
+                    </div>
+    
+                    <div class="col-12 d-flex justify-content-center">
+                        <button type="button" id="camera-button-2" class="m-2 btn btn-success btn-sm mt-2">
+                            <i class="fas fa-camera"></i>
+                            Abrir Cámara
+                        </button>
+                        <button type="button" id="camera-close-2" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
+                            <i class="fas fa-camera"></i> 
+                            Cerrar Cámara
+                        </button>
+                    </div>
                 </div>
             </div>
 

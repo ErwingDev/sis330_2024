@@ -3,38 +3,71 @@ const socket = io.connect('http://' + document.domain + ':' + location.port);
 
 socket.on('person_recognized', function (data) {
   console.log(data);
-  if(data.frame_find_person && document.querySelector('#camera-close').style.display == 'block') {
-    document.querySelector('#video').src = 'data:image/jpeg;base64,' + data.frame_find_person;
+  if(data.frame_find_person && (document.querySelector('#camera-close').style.display == 'block' || document.querySelector('#camera-close-2').style.display == 'block')) {
+    if($('#cameraSelect :selected').val()  == data.camera)
+      document.querySelector('#video').src = 'data:image/jpeg;base64,' + data.frame_find_person;
+    else
+      document.querySelector('#video-2').src = 'data:image/jpeg;base64,' + data.frame_find_person;
   }
 });
 
 $('#list-persons').on('click', '.check-list', e => {
-  startFindPerson();
+  // startFindPerson($('#cameraSelect :selected').val());
+});
+
+document.querySelector('#cameraSelect').addEventListener('change', e => {
+  verifySelectedCamera(1);
+});
+document.querySelector('#cameraSelect-2').addEventListener('change', e => {
+  verifySelectedCamera(2);
 });
 
 document.getElementById("camera-button").addEventListener("click", (e) => {
-  startFindPerson();
+  startFindPerson($('#cameraSelect :selected').val(), 1);
 });
 
 document.getElementById("camera-close").addEventListener("click", (e) => {
-  stopFindPerson();
-  closeCamera();
+  stopFindPerson($('#cameraSelect :selected').val(), 1);
+  closeCamera(1);
+});
+
+document.getElementById("camera-button-2").addEventListener("click", (e) => {
+  startFindPerson($('#cameraSelect-2 :selected').val(), 2);
+});
+
+document.getElementById("camera-close-2").addEventListener("click", (e) => {
+  stopFindPerson($('#cameraSelect-2 :selected').val(), 2);
+  closeCamera(2);
 });
 
 function init() {
   getListPersons();
 }
 
-function startFindPerson() {
+function verifySelectedCamera(index) {
+  if($('#cameraSelect :selected').val() != '') {
+    if($('#cameraSelect :selected').val() == $('#cameraSelect-2 :selected').val()) {
+      let aux = index == 2 ? '-2' : '';
+      document.querySelector('#cameraSelect'+aux).value = '';
+      alert('Indice de cámara repetida.')
+      return;
+    }
+  }
+}
+
+function startFindPerson(camera, index) {
   let data = getCheckSelected();
-  if(!data.name) return;
-  if(data.name && $('#cameraSelect :selected').val()) {
-    openCamera();
+  if(!data.name) {
+    alert("Seleccione una persona")
+    return;
+  }
+  if(data.name && camera !== '') {
+    openCamera(index);
     let formData = new FormData();
     formData.append('file', data.file);
     formData.append('name', data.name);
     formData.append('ci', data.ci);
-    formData.append('camera', $('#cameraSelect :selected').val());
+    formData.append('camera', camera);
     const http = new XMLHttpRequest();
     http.open("POST", "/start-find-person");
     http.onreadystatechange = function () {
@@ -49,17 +82,20 @@ function startFindPerson() {
   }
 }
 
-function stopFindPerson() {
+function stopFindPerson(camera, index) {
+  let formData = new FormData();
+  formData.append('camera', camera);
   const http = new XMLHttpRequest();
   http.open("POST", "/stop-find-person");
   http.onreadystatechange = function () {
     if (this.readyState == 4 && this.status == 200) {
       let data = this.responseText;
       console.log(data);
-      document.getElementById("video").src = "static/images/camera.png";
+      let aux = index == 2 ? '-2' : '';
+      document.getElementById("video"+aux).src = "static/images/camera.png";
     }
   }
-  http.send();
+  http.send(formData);
 }
 
 function getCheckSelected() {
@@ -69,7 +105,7 @@ function getCheckSelected() {
     ci : '',
     file : '',
   }
-  if(!$('#cameraSelect :selected').val()) return rspta;
+  // if(!$('#cameraSelect :selected').val()) return rspta;
   for(let i = 0; i < checks.length; i++) {
     if(checks[i].checked) {
       rspta.name = checks[i].getAttribute('name');
@@ -106,15 +142,17 @@ function getListPersons() {
 }
 
 
-function openCamera() {
-  document.getElementById("camera-close").style.display = "block";
-  document.getElementById("camera-button").style.display = "none";
+function openCamera(index) {
+  let aux = index == 2 ? '-2' : '';
+  document.getElementById("camera-close"+aux).style.display = "block";
+  document.getElementById("camera-button"+aux).style.display = "none";
 }
 
-function closeCamera() {
-  document.getElementById("video").src = "static/images/camera.png";
-  document.getElementById("camera-button").style.display = "block";
-  document.getElementById("camera-close").style.display = "none";
+function closeCamera(index) {
+  let aux = index == 2 ? '-2' : '';
+  document.getElementById("video"+aux).src = "static/images/camera.png";
+  document.getElementById("camera-button"+aux).style.display = "block";
+  document.getElementById("camera-close"+aux).style.display = "none";
 }
 
 function splitText(nameFile) {
