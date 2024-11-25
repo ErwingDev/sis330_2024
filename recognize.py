@@ -228,7 +228,7 @@ def tracking(detector, args):
     tracker = BYTETracker(args=args, frame_rate=30)
     frame_id = 0
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     h = False
     while True:
         _, img = cap.read()
@@ -244,6 +244,10 @@ def tracking(detector, args):
         cv2.imshow("Reconocimiento facial", tracking_image)
 
         # Check for user exit input
+        if cv2.waitKey(1) & 0xFF == ord('q'):  # Permite cerrar la ventana presionando 'q'.
+            break
+
+        time.sleep(0.01) 
         ch = cv2.waitKey(1)
         if ch == 27 or ch == ord("q") or ch == ord("Q"):
             break

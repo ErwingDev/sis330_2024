@@ -1,0 +1,54 @@
+{% extends "index.html" %}
+
+{% block title %}Agregar Persona{% endblock %}
+
+{% block content %}
+
+    <div id="div-add-person" class="row">
+
+        <div class="col-12 col-md-10 mx-auto mb-4">
+            <div class="row">
+                <h3 class="text-center mx-auto d-block w-100">Detectar</h3>
+                <div id="div-select-camera" class="col-12 mx-auto mb-2">
+                    <select id="cameraSelect" class="form-control">
+                        <option value="">Seleccione su cámara</option>
+                        {% for camera in cameras %}
+                        <option value="{{camera}}">Camera {{camera}}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="hidden" name="person" id="person">
+                </div>
+                <h3 id="timer" class="text-center mx-auto d-block w-100"></h3>
+                <div class="col-12 d-flex justify-content-center">
+                    <img id="video" class="rounded bg-video-camera" src="static/images/camera.png"/>
+                </div>
+
+                <div class="col-12 d-flex justify-content-center">
+                    <button type="button" id="camera-button" class="m-2 btn btn-success btn-sm mt-2">
+                        <i class="fas fa-camera"></i> 
+                        Abrir Cámara
+                    </button>
+                    <button type="button" id="camera-save" class="m-2 btn btn-primary btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-save"></i> 
+                        Guardar
+                    </button>
+                    <button type="button" id="camera-close" class="m-2 btn btn-danger btn-sm mt-2" style="display: none;">
+                        <i class="fas fa-camera"></i> 
+                        Cerrar Cámara
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+{% endblock %}
+
+{% block script %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="../static/scripts/add-person-for-face.js"></script>
+    <script>
+        document.querySelector('#nav-add-person-face').classList.add('active');
+    </script>
+{% endblock %}
+
