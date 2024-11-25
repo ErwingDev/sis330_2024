@@ -26,17 +26,27 @@ socket.on("detect-face-body", function (data) {
 });
 
 function startDetectBody(camera) {
-  fetch("/detect-body-with-face", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ camera_indices: [camera] }),
-  })
-    .then((response) => response.json())
-    .catch((error) => {
-      console.error("Error:", error);
-    });
+  let timeRemaining = 5
+  const intervalId = setInterval(function() {
+    timeRemaining--;
+    document.querySelector('#timer').textContent = timeRemaining;
+    
+    if (timeRemaining === 0) {
+      document.querySelector('#timer').textContent = '';
+      clearInterval(intervalId);
+      fetch("/detect-body-with-face", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ camera_indices: [camera] }),
+      })
+        .then((response) => response.json())
+        .catch((error) => {
+          console.error("Error:", error);
+      });
+    }
+  }, 1000); 
 }
 
 function stopDetectBody(camera, imgDefault = true) {

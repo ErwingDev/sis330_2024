@@ -466,7 +466,8 @@ def start_find_person():
 
                     similarity = utils.compare_embeddings(person_features, target_features)
 
-                    threshold = 0.75
+                    # threshold = 0.75
+                    threshold = 0.73
                     if similarity > threshold :
                         if similarity.item() > prob_seg : 
                             prob_seg = similarity.item()

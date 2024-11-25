@@ -21,7 +21,7 @@
     /* width: 90%; */
     width: auto;
     max-width: 100%;
-    height: 320px;
+    height: 380px;
 }
 
 .bg-video-camera-find {
@@ -46,6 +46,15 @@
     background-color: rgb(5, 114, 206);
     animation: indeterminateAnimation 1s infinite linear;
     transform-origin: 0% 50%;
+}
+
+.main-sidebar .nav .nav-item .nav-link i {
+    color: #9b9696;
+}
+
+.page-title {
+    text-transform: uppercase;
+    font-size: 1.4rem !important;
 }
 
 @keyframes indeterminateAnimation {

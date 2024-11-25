@@ -15,7 +15,8 @@ class Util :
     extractor = torchreid.utils.FeatureExtractor(
         model_name = 'osnet_x1_0',
         device = 'cuda' if torch.cuda.is_available() else 'cpu',
-        model_path = './models/model.pth-osnet.tar-300',
+        model_path = './datasets/reid-data/log/osnet/model/model.pth-osnet.tar-300',
+        # model_path = './datasets/reid-data/log/osnet/model/model.pth.tar-50',
     )
 
     def extract_features(self, person_image):
